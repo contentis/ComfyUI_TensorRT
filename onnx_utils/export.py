@@ -3,13 +3,14 @@ from enum import Enum
 from typing import List
 import os
 from pathlib import Path
-
+import time
 import onnx
 from onnx.external_data_helper import _get_all_tensors, ExternalDataInfo
 from onnxmltools.utils.float16_converter import convert_float_to_float16
 import onnx_graphsurgeon as gs
 
 import comfy
+import folder_paths
 
 from ..mo_utils.attention_plugin import attn_cls
 from .fp8_onnx_graphsurgeon import (
@@ -323,10 +324,19 @@ def export_onnx(
     inputs = get_sample_input(input_shapes, dtype, device)
     backbone = get_backbone(model, model_type, input_names, num_video_frames)
 
+    dir, name = os.path.split(path)
+    temp_path = os.path.join(folder_paths.get_temp_directory(), "{}".format(time.time()))
+    onnx_temp = os.path.normpath(
+        os.path.join(temp_path, name)
+    )
+
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
+
     torch.onnx.export(
         backbone,
         inputs,
-        path,
+        onnx_temp,
         verbose=False,
         input_names=input_names,
         output_names=output_names,
@@ -336,16 +346,15 @@ def export_onnx(
 
     comfy.model_management.unload_all_models()
     comfy.model_management.soft_empty_cache()
-    dir, name = os.path.split(path)
-    onnx_model = onnx.load(path, load_external_data=False)
+    onnx_model = onnx.load(onnx_temp, load_external_data=False)
     tensors_paths = _get_onnx_external_data_tensors(onnx_model)
 
     if not tensors_paths:
         return
 
-    onnx_model = onnx.load(path, load_external_data=True)
+    onnx_model = onnx.load(onnx_temp, load_external_data=True)
     for tensor in tensors_paths:
-        os.remove(os.path.join(dir, tensor))
+        os.remove(os.path.join(temp_path, tensor))
 
     onnx.save(
         onnx_model,
@@ -361,7 +370,7 @@ def export_onnx(
 
     onnx_model = onnx.load(path, load_external_data=True)
     # Iterate over all files in the folder and delete them
-    output_folder = Path(dir)
+    output_folder = Path(temp_path)
     for file in output_folder.iterdir():
         if file.is_file():
             file.unlink()

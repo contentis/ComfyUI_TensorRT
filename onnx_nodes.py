@@ -1,6 +1,6 @@
 import os
 from .onnx_utils.export import export_onnx
-
+import folder_paths
 import comfy
 
 
@@ -16,7 +16,7 @@ class ONNX_EXPORT:
     @classmethod
     def INPUT_TYPES(s):
         return {
-            "required": {"model": ("MODEL",), "output_folder": ("STRING",)},
+            "required": {"model": ("MODEL",), "output_folder": ("STRING",{"default": os.path.join(folder_paths.models_dir, "onnx") })},
             "optional": {"filename": ("STRING", {"default": "model.onnx"})},
         }
 
@@ -44,8 +44,8 @@ class ONNX_FP8_EXPORT:
     @classmethod
     def INPUT_TYPES(s):
         return {
-            "required": {"model": ("MODEL",), "output_folder": ("STRING",)},
-            "optional": {"filename": ("STRING", {"default": "model.onnx"})},
+            "required": {"model": ("MODEL",), "output_folder": ("STRING",{"default": os.path.join(folder_paths.models_dir, "onnx") })},
+            "optional": {"filename": ("STRING", {"default": "model_FP8.onnx"})},
         }
 
     def export(self, model, output_folder, filename):

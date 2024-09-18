@@ -1,7 +1,8 @@
-tensorrt>=10.0.1
+tensorrt>=10.4.0 --extra-index-url https://pypi.nvidia.com
 onnx
-nvidia-modelopt~=0.17.0
+nvidia-modelopt~=0.15.1
 onnx!=1.16.2
 onnx-graphsurgeon
 onnxmltools
 onnxconverter-common
+pulp
