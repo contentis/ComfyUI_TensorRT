@@ -2,7 +2,6 @@ import torch
 from enum import Enum
 from typing import List
 import os
-from pathlib import Path
 
 import onnx
 from onnx.external_data_helper import _get_all_tensors, ExternalDataInfo
@@ -94,6 +93,8 @@ class ModelType(Enum):
             cls.SDXL_BASE.value,
             cls.SD3.value,
             cls.FLUX_DEV.value,
+            cls.FLUX_SCHNELL.value,
+            # cls.AuraFlow.value
         ]
 
 
@@ -269,8 +270,8 @@ def generate_fp8_scales(backbone):
                 127 / 448.0
             )
         elif isinstance(module, attn_cls) and (
-            hasattr(module.q_bmm_quantizer, "_amax")
-            and module.q_bmm_quantizer is not None
+           hasattr(module.q_bmm_quantizer, "_amax")
+           and module.q_bmm_quantizer is not None
         ):
             module.q_bmm_quantizer._num_bits = 8
             module.q_bmm_quantizer._amax = module.q_bmm_quantizer._amax * (127 / 448.0)
@@ -278,8 +279,8 @@ def generate_fp8_scales(backbone):
             module.k_bmm_quantizer._amax = module.k_bmm_quantizer._amax * (127 / 448.0)
             module.v_bmm_quantizer._num_bits = 8
             module.v_bmm_quantizer._amax = module.v_bmm_quantizer._amax * (127 / 448.0)
-            module.softmax_quantizer._num_bits = 8
-            module.softmax_quantizer._amax = module.softmax_quantizer._amax * (
+            module.softmax_bmm_quantizer._num_bits = 8
+            module.softmax_bmm_quantizer._amax = module.softmax_bmm_quantizer._amax * (
                 127 / 448.0
             )
 

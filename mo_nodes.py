@@ -73,29 +73,33 @@ class MOConfig:
 # TODO validate the default confgis
 DEFAULT_CONFIGS = {
     ModelType.SD1x.value: {
-        "int8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 512, "default", 2),
-        "fp8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 512, "default", 2),
+        "int8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 128, "default", 2),
+        "fp8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 256, "default", 2),
     },
     ModelType.SD2x768v.value: {
-        "int8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.9, 512, "default", 2.5),
-        "fp8": MOConfig(512, 512, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.9, 512, "default", 2.5),     
+        "int8": MOConfig(768, 768, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(768, 768, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 128, "default", 2.5),     
     },
     ModelType.SDXL_BASE.value: {
-        "int8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "default", 2.5),
-        "fp8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 128, "default", 3),       
+        "int8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 1.0, 128, "default", 3),       
     },
     ModelType.SD3.value: {
-        "int8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "default", 2.5),
-        "fp8": MOConfig(1024, 1024, 42, 30, 7.5, "euler", "normal", 1.0, 1.0, 0.8, 128, "default", 3),            
+        "int8": MOConfig(1024, 1024, 42, 30, 5.5, "euler", "sgm_uniform", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(1024, 1024, 42, 30, 5.5, "euler", "sgm_uniform", 1.0, 1.0, 1.0, 128, "default", 3),            
     },
     ModelType.FLUX_DEV.value: {
-        "int8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "default", 2.5),
-        "fp8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "normal", 1.0, 1.0, 0.8, 128, "default", 3),       
+        "int8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "simple", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "simple", 1.0, 1.0, 1.0, 128, "default", 3),       
     },
     ModelType.FLUX_SCHNELL.value: {
-        "int8": MOConfig(1024, 1024, 42, 4, 3.5, "euler", "normal", 1.0, 1.0, 0.8, 64, "default", 2.5),
-        "fp8": MOConfig(1024, 1024, 42, 4, 3.5, "euler", "normal", 1.0, 1.0, 0.8, 128, "default", 3),       
-    }
+        "int8": MOConfig(1024, 1024, 42, 4, 3.5, "euler", "simple", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(1024, 1024, 42, 4, 3.5, "euler", "simple", 1.0, 1.0, 1.0, 128, "default", 3),       
+    },
+    ModelType.AuraFlow.value: {
+        "int8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "sgm_uniform", 1.0, 1.0, 0.8, 64, "min-mean", 2.5),
+        "fp8": MOConfig(1024, 1024, 42, 30, 3.5, "euler", "sgm_uniform", 1.0, 1.0, 1.0, 128, "default", 3),       
+    },
 }
 
 
@@ -132,7 +136,7 @@ class BaseQuantizer:
         calib_prompts_path="default",
     ):
         comfy.model_management.unload_all_models()
-        comfy.model_management.load_models_gpu([model], force_patch_weights=True)
+        comfy.model_management.load_models_gpu([model], force_patch_weights=True, force_full_load=True)
         backbone = model.model.diffusion_model
         device = comfy.model_management.get_torch_device()
 
@@ -176,6 +180,8 @@ class BaseQuantizer:
                 )
             else:
                 raise NotImplementedError
+        else:
+            raise NotImplementedError
 
         if model_type in (ModelType.FLUX_DEV, ModelType.FLUX_SCHNELL):
             pipe = FluxDiffusionPipe(
@@ -204,7 +210,7 @@ class BaseQuantizer:
                 scheduler,
                 denoise,
                 device=device,
-                is_sd3=model_type == ModelType.SD3,
+                is_sd3=model_type in (ModelType.SD3,),
             )
 
         def forward_loop(backbone):
@@ -400,17 +406,22 @@ class ModelOptLoader:
     CATEGORY = "TensorRT"
 
     def load(self, model, quantized_ckpt, quant_level, format):
+        _state_key = "_modelopt_state"
+
         quantized_ckpt_path = folder_paths.get_full_path("modelopt", quantized_ckpt)
         if not os.path.isfile(quantized_ckpt_path):
             raise FileNotFoundError(f"File {quantized_ckpt_path} does not exist")
 
         comfy.model_management.unload_all_models()
-        comfy.model_management.load_models_gpu([model], force_patch_weights=True)
+        comfy.model_management.load_models_gpu([model], force_patch_weights=True, force_full_load=True)
         backbone = model.model.diffusion_model
         register_quant_modules()
 
         # Lets restore the quantized model
-        mto.restore(backbone, quantized_ckpt_path)
+        if hasattr(model, _state_key):
+            print("INFO: Model already has ModeOpt State loaded. Skipping...")
+        else:
+            mto.restore(backbone, quantized_ckpt_path)
         quantize_lvl(backbone, quant_level)
         mtq.disable_quantizer(backbone, filter_func)
 
