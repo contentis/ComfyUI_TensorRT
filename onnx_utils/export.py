@@ -58,7 +58,7 @@ class ModelType(Enum):
         elif isinstance(model.model, comfy.model_base.AuraFlow):
             return cls.AuraFlow
         elif isinstance(model.model, comfy.model_base.Flux):
-            if model.model.model_config.unet_config["guidance_embed"]:
+            if model.model.model_config.unet_config.get("guidance_embed", False):
                 return cls.FLUX_DEV
             else:
                 return cls.FLUX_SCHNELL

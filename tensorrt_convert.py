@@ -192,7 +192,8 @@ class TRT_MODEL_CONVERSION_BASE:
         builder = trt.Builder(logger)
 
         network = builder.create_network(
-            1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED))
+            1 << int(trt.NetworkDefinitionCreationFlag.STRONGLY_TYPED)
+        )
         parser = trt.OnnxParser(network, logger)
         success = parser.parse_from_file(output_onnx)
         for idx in range(parser.num_errors):
