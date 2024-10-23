@@ -4,6 +4,9 @@ import torch
 
 from .attention_plugin import attn_cls
 
+def disable_all(name):
+    return True
+
 def filter_func(name):
     pattern = re.compile(
         r".*(emb_layers|time_embed|input_blocks.0.0|out.2|skip_connection|label_emb.0|x_embedder|pos_embed|t_embedder|y_embedder|context_embedder|final_layer.adaLN_modulation|final_layer.linear).*"
@@ -41,14 +44,17 @@ def quantize_lvl(unet, quant_level=2.5, linear_only=False):
             ):
                 module.input_quantizer.enable()
                 module.weight_quantizer.enable()
-            elif(quant_level >= 2):
-                print(module)
             else:
                 module.input_quantizer.disable()
                 module.weight_quantizer.disable()
         elif isinstance(module, attn_cls):
             # TRT only supports FP8 MHA with head_size % 16 == 0.
-            head_size = int(module.hidden_size / module.num_heads)
+            if hasattr(module, "dim_head"):
+                head_size = module.dim_head
+            elif hasattr(module, "head_dim"):
+                head_size = module.head_dim
+            else:
+                head_size = int(module.hidden_size / module.num_heads)
             if quant_level >= 4 and head_size % 16 == 0:
                 module.q_bmm_quantizer.enable()
                 module.k_bmm_quantizer.enable()

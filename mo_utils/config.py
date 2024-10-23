@@ -2,7 +2,45 @@ import torch
 from .plugin_calib import PercentileCalibrator
 from .utils import filter_func
 
-SD_FP8_FP16_DEFAULT_CONFIG = {
+FP8_BF16_DEFAULT_CONFIG = {
+    "quant_cfg": {
+        "*weight_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "*input_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "*output_quantizer": {"enable": False},
+        "*q_bmm_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "*k_bmm_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "*v_bmm_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "*softmax_quantizer": {
+            "num_bits": (4, 3),
+            "axis": None,
+            "trt_high_precision_dtype": "BFloat16",
+        },
+        "default": {"enable": False},
+    },
+    "algorithm": "max",
+}
+
+FP8_FP16_DEFAULT_CONFIG = {
     "quant_cfg": {
         "*weight_quantizer": {"num_bits": (4, 3), "axis": None, "trt_high_precision_dtype": "Half"},
         "*input_quantizer": {"num_bits": (4, 3), "axis": None, "trt_high_precision_dtype": "Half"},
@@ -20,7 +58,7 @@ SD_FP8_FP16_DEFAULT_CONFIG = {
     "algorithm": "max",
 }
 
-SD_FP8_FP32_DEFAULT_CONFIG = {
+FP8_FP32_DEFAULT_CONFIG = {
     "quant_cfg": {
         "*weight_quantizer": {
             "num_bits": (4, 3),
@@ -149,4 +187,3 @@ def set_stronglytyped_precision(quant_config, precision: str = "Half"):
     for key in quant_config["quant_cfg"].keys():
         if "trt_high_precision_dtype" in quant_config["quant_cfg"][key].keys():
             quant_config["quant_cfg"][key]["trt_high_precision_dtype"] = precision
-    # return quant_config

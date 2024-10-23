@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+import torch
 
 import comfy.model_base
 import comfy.model_management
@@ -10,10 +11,11 @@ import folder_paths
 import modelopt.torch.opt as mto
 import modelopt.torch.quantization as mtq
 
-from .mo_utils.utils import load_calib_prompts, filter_func, quantize_lvl
+from .mo_utils.utils import load_calib_prompts, filter_func, quantize_lvl, disable_all
 from .mo_utils.config import (
-    SD_FP8_FP16_DEFAULT_CONFIG,
-    SD_FP8_FP32_DEFAULT_CONFIG,
+    FP8_BF16_DEFAULT_CONFIG,
+    FP8_FP16_DEFAULT_CONFIG,
+    FP8_FP32_DEFAULT_CONFIG,
     get_int8_config,
     set_stronglytyped_precision,
 )
@@ -21,7 +23,7 @@ from .mo_utils.ksampler_t2i import DiffusionPipe
 from .mo_utils.flux_sampler_t2i import DiffusionPipe as FluxDiffusionPipe
 from .mo_utils.attention_plugin import register_quant_modules
 
-from .onnx_utils.export import ModelType, generate_fp8_scales
+from .onnx_utils.export import ModelType
 
 MAX_RESOLUTION = 16384
 
@@ -115,7 +117,6 @@ class BaseQuantizer:
 
     def _quantize(
         self,
-        name,
         model,
         clip,
         model_type,
@@ -135,6 +136,9 @@ class BaseQuantizer:
         quant_level,
         calib_prompts_path="default",
     ):
+        if mto.ModeloptStateManager.is_converted(model.model.diffusion_model):
+            print("Resetting Quantizer State")
+            model = comfy.sd.load_diffusion_model_state_dict(model.model.diffusion_model.state_dict())
         comfy.model_management.unload_all_models()
         comfy.model_management.load_models_gpu([model], force_patch_weights=True, force_full_load=True)
         backbone = model.model.diffusion_model
@@ -173,11 +177,12 @@ class BaseQuantizer:
             )
         elif format == "fp8":
             if collect_method == "default":
-                quant_config = (
-                    SD_FP8_FP32_DEFAULT_CONFIG
-                    if model_type == ModelType.SD2x768v
-                    else SD_FP8_FP16_DEFAULT_CONFIG
-                )
+                if model_type in (ModelType.FLUX_DEV, ModelType.FLUX_SCHNELL):
+                    quant_config = FP8_BF16_DEFAULT_CONFIG
+                elif model_type in (ModelType.SD2x768v,):
+                    quant_config = FP8_FP32_DEFAULT_CONFIG
+                else:
+                    quant_config = FP8_FP16_DEFAULT_CONFIG
             else:
                 raise NotImplementedError
         else:
@@ -226,20 +231,10 @@ class BaseQuantizer:
             set_stronglytyped_precision(quant_config, "BFloat16")
 
         register_quant_modules()
+
         mtq.quantize(backbone, quant_config, forward_loop)
-
-        out_path = os.path.join(
-            folder_paths.folder_names_and_paths["modelopt"][0][0],
-            "{}_{}.pt".format(name, format),
-        )
-        print(out_path)
-        mto.save(backbone, out_path)
-
         quantize_lvl(backbone, quant_level)
         mtq.disable_quantizer(backbone, filter_func)
-
-        if format == "fp8":
-            generate_fp8_scales(backbone)
 
         return (model,)
 
@@ -249,7 +244,6 @@ class ModelOptEzQuantizer(BaseQuantizer):
     def INPUT_TYPES(s):
         return {
             "required": {
-                "name": ("STRING", {"default": "mo_quantization"}),
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
                 "model_type": (ModelType.list_mo_support(), {}),
@@ -264,12 +258,11 @@ class ModelOptEzQuantizer(BaseQuantizer):
         }
 
     def quantize(
-        self, name, model, clip, model_type, format, calib_prompts_path="default"
+        self, model, clip, model_type, format, calib_prompts_path="default"
     ):
         config = DEFAULT_CONFIGS[model_type][format]
         print(f"INFO: Running quantization with following config: {config}")
         return super()._quantize(
-            name,
             model,
             clip,
             model_type,
@@ -284,7 +277,6 @@ class ModelOptQuantizer(BaseQuantizer):
     def INPUT_TYPES(s):
         return {
             "required": {
-                "name": ("STRING", {"default": "mo_quantization"}),
                 "model": ("MODEL",),
                 "clip": ("CLIP",),
                 "model_type": (ModelType.list_mo_support(), {}),
@@ -345,7 +337,6 @@ class ModelOptQuantizer(BaseQuantizer):
 
     def quantize(
         self,
-        name,
         model,
         clip,
         model_type,
@@ -366,7 +357,6 @@ class ModelOptQuantizer(BaseQuantizer):
         calib_prompts_path="default",
     ):
         return super()._quantize(
-            name,
             model,
             clip,
             model_type,
@@ -387,6 +377,32 @@ class ModelOptQuantizer(BaseQuantizer):
             calib_prompts_path,
         )
 
+class ModelOptSaver:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "model": ("MODEL",),
+                "name": ("STRING", {"default": "mo_quantization"}),
+            }
+        }
+    
+    RETURN_TYPES = ()
+    FUNCTION = "save"
+    OUTPUT_NODE = True
+    CATEGORY = "TensorRT"
+
+    def save(self, model, name):
+        out_path = os.path.join(
+            folder_paths.folder_names_and_paths["modelopt"][0][0],
+            "{}.pt".format(name),
+        )
+        print(out_path)
+        backbone = model.model.diffusion_model
+        torch.save(mto.modelopt_state(backbone), out_path)
+
+        mtq.disable_quantizer(backbone, disable_all)
+        return ()
 
 class ModelOptLoader:
     @classmethod
@@ -395,8 +411,6 @@ class ModelOptLoader:
             "required": {
                 "model": ("MODEL",),
                 "quantized_ckpt": (folder_paths.get_filename_list("modelopt"),),
-                "quant_level": ([4.0, 3.0, 2.5, 2.0, 1.0], {"default": 2.5}),
-                "format": (["int8", "fp8"],),
             }
         }
 
@@ -405,28 +419,23 @@ class ModelOptLoader:
     OUTPUT_NODE = True
     CATEGORY = "TensorRT"
 
-    def load(self, model, quantized_ckpt, quant_level, format):
-        _state_key = "_modelopt_state"
-
+    def load(self, model, quantized_ckpt):
+        
         quantized_ckpt_path = folder_paths.get_full_path("modelopt", quantized_ckpt)
         if not os.path.isfile(quantized_ckpt_path):
             raise FileNotFoundError(f"File {quantized_ckpt_path} does not exist")
+
+        if mto.ModeloptStateManager.is_converted(model.model.diffusion_model):
+            print("Resetting Quantizer State")
+            model = comfy.sd.load_diffusion_model_state_dict(model.model.diffusion_model.state_dict())
 
         comfy.model_management.unload_all_models()
         comfy.model_management.load_models_gpu([model], force_patch_weights=True, force_full_load=True)
         backbone = model.model.diffusion_model
         register_quant_modules()
 
-        # Lets restore the quantized model
-        if hasattr(model, _state_key):
-            print("INFO: Model already has ModeOpt State loaded. Skipping...")
-        else:
-            mto.restore(backbone, quantized_ckpt_path)
-        quantize_lvl(backbone, quant_level)
-        mtq.disable_quantizer(backbone, filter_func)
-
-        if format == "fp8":
-            generate_fp8_scales(backbone)
+        modelopt_state = torch.load(quantized_ckpt_path)
+        backbone = mto.restore_from_modelopt_state(backbone, modelopt_state)
 
         return (model,)
 
@@ -435,10 +444,12 @@ NODE_CLASS_MAPPINGS = {
     "ModelOptQuantizer": ModelOptQuantizer,
     "ModelOptEzQuantizer": ModelOptEzQuantizer,
     "ModelOptLoader": ModelOptLoader,
+    "ModelOptSaver": ModelOptSaver,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ModelOptQuantizer": "ModelOpt Advanced Quantizer",
     "ModelOptEzQuantizer": "ModelOpt Ez Quantizer",
-    "ModelOptLoader": "Model OptLoader",
+    "ModelOptLoader": "ModelOpt Load",
+    "ModelOptSaver": "ModelOpt Save",
 }

@@ -212,6 +212,9 @@ def register_attention_for_qkv_quant(attention_cls: type, sdpa_ops: tuple) -> bo
             globals=original_method.__globals__,
             closure=original_method.__closure__,
         )
+        if method_name == "forward":
+            new_methods[method_name].__defaults__ = original_method.__defaults__
+
 
     def setup_method(self):
         self.softmax_bmm_quantizer = TensorQuantizer()

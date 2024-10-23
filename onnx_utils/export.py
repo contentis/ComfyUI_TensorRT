@@ -262,6 +262,7 @@ def generate_fp8_scales(backbone):
         if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d)) and (
             hasattr(module.input_quantizer, "_amax")
             and module.input_quantizer is not None
+            and module.input_quantizer._num_bits == (4,3)
         ):
             module.input_quantizer._num_bits = 8
             module.weight_quantizer._num_bits = 8
@@ -272,6 +273,7 @@ def generate_fp8_scales(backbone):
         elif isinstance(module, attn_cls) and (
            hasattr(module.q_bmm_quantizer, "_amax")
            and module.q_bmm_quantizer is not None
+           and module.q_bmm_quantizer._num_bits == (4,3)
         ):
             module.q_bmm_quantizer._num_bits = 8
             module.q_bmm_quantizer._amax = module.q_bmm_quantizer._amax * (127 / 448.0)
@@ -326,6 +328,9 @@ def export_onnx(
     inputs = get_sample_input(input_shapes, dtype, device)
     backbone = get_backbone(model, model_type, input_names, num_video_frames)
 
+    if fp8:
+        generate_fp8_scales(backbone)
+
     dir, name = os.path.split(path)
     temp_path = os.path.join(folder_paths.get_temp_directory(), "{}".format(time.time()))
     onnx_temp = os.path.normpath(
@@ -345,7 +350,7 @@ def export_onnx(
         opset_version=17,
         dynamic_axes=dynamic_axes,
     )
-
+    
     comfy.model_management.unload_all_models()
     comfy.model_management.soft_empty_cache()
 
@@ -357,17 +362,21 @@ def export_onnx(
             os.remove(os.path.join(onnx_temp, tensor))
 
     if fp8:
-        onnx_model = convert_zp_fp8(onnx_model)
         if model_type not in (ModelType.FLUX_DEV, ModelType.FLUX_SCHNELL):
+            graph = gs.import_onnx(onnx_model)
+            graph.cleanup().toposort()
+            convert_fp16_io(graph)
+            onnx_model = gs.export_onnx(graph)
+            onnx_model = convert_zp_fp8(onnx_model)
             onnx_model = convert_float_to_float16(
                 onnx_model, keep_io_types=True, disable_shape_infer=True
             )
             graph = gs.import_onnx(onnx_model)
             cast_resize_io(graph)
-            convert_fp16_io(graph)
             cast_fp8_mha_io(graph)
-            onnx_model = gs.export_onnx(graph)
+            onnx_model = gs.export_onnx(graph.cleanup())
         else:
+            onnx_model = convert_zp_fp8(onnx_model)
             flux_convert_rope_weight_type(onnx_model)
 
     onnx.save(
