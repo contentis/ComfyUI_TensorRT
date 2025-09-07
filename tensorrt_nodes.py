@@ -155,9 +155,7 @@ class TRTBuildBase:
             full_output_folder, f"{filename}_{counter:05}_.engine"
         )
 
-        batch_multiplier = (
-            2 if model_helper.is_conditional else 1
-        )  # TODO lets see if we really want this
+        batch_multiplier = 1
         if model_version == "SVD_img2vid":
             batch_multiplier *= num_video_frames
         success = trt_model.build(
@@ -338,7 +336,7 @@ class DynamicTRTBuild(TRTBuildBase):
             context_opt,
             context_max,
             num_video_frames,
-            onnx_model_path,
+            onnx_model_path = None,
     ):
         return super()._convert(
             model,
@@ -431,7 +429,7 @@ class StaticTRTBuild(TRTBuildBase):
             width_opt,
             context_opt,
             num_video_frames,
-            onnx_model_path,
+            onnx_model_path = None,
     ):
         return super()._convert(
             model,
